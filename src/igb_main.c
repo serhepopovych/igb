@@ -5697,6 +5697,54 @@ static void igb_tx_olinfo_status(struct igb_ring *tx_ring,
 	tx_desc->read.olinfo_status = cpu_to_le32(olinfo_status);
 }
 
+static int __igb_maybe_stop_tx(struct igb_ring *tx_ring, const u16 size)
+{
+	struct net_device *netdev = netdev_ring(tx_ring);
+
+	if (netif_is_multiqueue(netdev))
+		netif_stop_subqueue(netdev, ring_queue_index(tx_ring));
+	else
+		netif_stop_queue(netdev);
+
+	/* Herbert's original patch had:
+	 *  smp_mb__after_netif_stop_queue();
+	 * but since that doesn't exist yet, just open code it.
+	 */
+	smp_mb();
+
+	/* We need to check again in a case another CPU has just
+	 * made room available.
+	 */
+	if (igb_desc_unused(tx_ring) < size)
+		return -EBUSY;
+
+	/* A reprieve! */
+	if (netif_is_multiqueue(netdev))
+		netif_wake_subqueue(netdev, ring_queue_index(tx_ring));
+	else
+		netif_wake_queue(netdev);
+
+	tx_ring->tx_stats.restart_queue++;
+
+	return 0;
+}
+
+static inline int igb_maybe_stop_tx(struct igb_ring *tx_ring, const u16 size)
+{
+	if (igb_desc_unused(tx_ring) >= size)
+		return 0;
+	return __igb_maybe_stop_tx(tx_ring, size);
+}
+
+static inline bool igb_xmit_more(const struct sk_buff *skb)
+{
+#ifdef HAVE_SKB_XMIT_MORE
+	return skb->xmit_more;
+#else
+	return 0;
+#endif
+}
+
 static int igb_tx_map(struct igb_ring *tx_ring,
 		      struct igb_tx_buffer *first,
 		      const u8 hdr_len)
@@ -5802,20 +5850,24 @@ static int igb_tx_map(struct igb_ring *tx_ring,
 	/* software timestamp the skb */
 	skb_tx_timestamp(skb);
 
-	writel(i, tx_ring->tail);
+	/* Make sure there is space in the ring for the next send. */
+	igb_maybe_stop_tx(tx_ring, DESC_NEEDED);
 
+	if (netif_xmit_stopped(txring_txq(tx_ring)) || !igb_xmit_more(skb)) {
+		writel(i, tx_ring->tail);
 #ifndef SPIN_UNLOCK_IMPLIES_MMIOWB
-	/* The following mmiowb() is required on certain
-	 * architechtures (IA64/Altix in particular) in order to
-	 * synchronize the I/O calls with respect to a spin lock. This
-	 * is because the wmb() on those architectures does not
-	 * guarantee anything for posted I/O writes.
-	 *
-	 * Note that the associated spin_unlock() is not within the
-	 * driver code, but in the networking core stack.
-	 */
-	mmiowb();
+		/* The following mmiowb() is required on certain
+		 * architechtures (IA64/Altix in particular) in order to
+		 * synchronize the I/O calls with respect to a spin lock. This
+		 * is because the wmb() on those architectures does not
+		 * guarantee anything for posted I/O writes.
+		 *
+		 * Note that the associated spin_unlock() is not within the
+		 * driver code, but in the networking core stack.
+		 */
+		mmiowb();
 #endif /* SPIN_UNLOCK_IMPLIES_MMIOWB */
+	}
 
 	return 0;
 
@@ -5836,45 +5888,6 @@ dma_error:
 	tx_ring->next_to_use = i;
 
 	return -1;
-}
-
-static int __igb_maybe_stop_tx(struct igb_ring *tx_ring, const u16 size)
-{
-	struct net_device *netdev = netdev_ring(tx_ring);
-
-	if (netif_is_multiqueue(netdev))
-		netif_stop_subqueue(netdev, ring_queue_index(tx_ring));
-	else
-		netif_stop_queue(netdev);
-
-	/* Herbert's original patch had:
-	 *  smp_mb__after_netif_stop_queue();
-	 * but since that doesn't exist yet, just open code it.
-	 */
-	smp_mb();
-
-	/* We need to check again in a case another CPU has just
-	 * made room available.
-	 */
-	if (igb_desc_unused(tx_ring) < size)
-		return -EBUSY;
-
-	/* A reprieve! */
-	if (netif_is_multiqueue(netdev))
-		netif_wake_subqueue(netdev, ring_queue_index(tx_ring));
-	else
-		netif_wake_queue(netdev);
-
-	tx_ring->tx_stats.restart_queue++;
-
-	return 0;
-}
-
-static inline int igb_maybe_stop_tx(struct igb_ring *tx_ring, const u16 size)
-{
-	if (igb_desc_unused(tx_ring) >= size)
-		return 0;
-	return __igb_maybe_stop_tx(tx_ring, size);
 }
 
 netdev_tx_t igb_xmit_frame_ring(struct sk_buff *skb,
@@ -5965,9 +5978,6 @@ netdev_tx_t igb_xmit_frame_ring(struct sk_buff *skb,
 	netdev_ring(tx_ring)->trans_start = jiffies;
 
 #endif
-	/* Make sure there is space in the ring for the next send. */
-	igb_maybe_stop_tx(tx_ring, DESC_NEEDED);
-
 	return NETDEV_TX_OK;
 
 out_drop:
