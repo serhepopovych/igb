@@ -5449,9 +5449,10 @@ unsigned int __kc_eth_get_headlen(unsigned char *data, unsigned int max_len);
 #endif /* >= RH 7.1 */
 
 /* RHEL 7.3 backported xmit_more */
-#if (RHEL_RELEASE_CODE && RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7,3))
+#if defined(SKB_XMIT_MORE) || \
+    (RHEL_RELEASE_CODE && RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7,3))
 #define HAVE_SKB_XMIT_MORE
-#endif /* >= RH 7.3 */
+#endif /* SKB_XMIT_MORE || >= RH 7.3 */
 
 #undef GENMASK
 #define GENMASK(h, l) \
@@ -7024,12 +7025,13 @@ static inline bool flow_rule_match_key(const struct flow_rule *rule,
 
 /*****************************************************************************/
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5,2,0))
-#if (defined HAVE_SKB_XMIT_MORE) && \
-(!(RHEL_RELEASE_CODE && (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,2))))
+#if (!(RHEL_RELEASE_CODE && (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,2))))
+#if defined(HAVE_SKB_XMIT_MORE)
 #define netdev_xmit_more()	(skb->xmit_more)
 #else
 #define netdev_xmit_more()	(0)
-#endif
+#endif /* skb->xmit_more */
+#endif /* !RHEL >= 8.2 */
 
 #if (!(RHEL_RELEASE_CODE && (RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(8,2))))
 #ifndef eth_get_headlen
