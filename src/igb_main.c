@@ -2195,7 +2195,7 @@ static int igb_set_features(struct net_device *netdev,
 
 	igb_do_reset(netdev);
 
-	return 0;
+	return 1;
 }
 #endif /* HAVE_NDO_SET_FEATURES */
 
