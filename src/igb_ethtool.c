@@ -605,6 +605,8 @@ static const char igb_priv_flags_strings[][ETH_GSTRING_LEN] = {
 	"vlan-stag-rx",
 #define IGB_PRIV_FLAGS_VLAN_STAG_FILTER			BIT(1)
 	"vlan-stag-filter",
+#define IGB_PRIV_FLAGS_OUTER_VLAN_PROTO_8021AD		BIT(2)
+	"vlan-stag-ethertype-802.1ad",
 };
 
 #define IGB_PRIV_FLAGS_STR_LEN ARRAY_SIZE(igb_priv_flags_strings)
@@ -3513,6 +3515,9 @@ static u32 igb_get_priv_flags(struct net_device *netdev)
 	if (adapter->flags & IGB_FLAG_VLAN_STAG_FILTER)
 		priv_flags |= IGB_PRIV_FLAGS_VLAN_STAG_FILTER;
 
+	if (adapter->outer_vlan_proto == ETH_P_8021AD)
+		priv_flags |= IGB_PRIV_FLAGS_OUTER_VLAN_PROTO_8021AD;
+
 	return priv_flags;
 }
 
@@ -3570,6 +3575,17 @@ static int igb_set_priv_flags(struct net_device *netdev, u32 priv_flags)
 			adapter->flags ^= IGB_FLAG_VLAN_STAG_FILTER;
 			do_reset |= IGB_SPF_SET_FEATURES;
 		}
+	}
+
+	/* Outer VLAN Ethernet Type */
+	if (changed & IGB_PRIV_FLAGS_OUTER_VLAN_PROTO_8021AD) {
+		if (priv_flags & IGB_PRIV_FLAGS_OUTER_VLAN_PROTO_8021AD)
+			adapter->outer_vlan_proto = ETH_P_8021AD;
+		else
+			adapter->outer_vlan_proto = ETH_P_8021Q;
+
+		if (adapter->flags & IGB_FLAG_VLAN_STAG_RX)
+			do_reset |= IGB_SPF_SET_RX_MODE;
 	}
 
 	if (do_reset & IGB_SPF_SET_FEATURES) {
