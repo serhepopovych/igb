@@ -2127,7 +2127,7 @@ void igb_reset(struct igb_adapter *adapter)
 
 	/* Enable h/w to recognize an 802.1Q/802.1AD VLAN Ethernet packet */
 	if (1) {
-		__le16 vlan_proto = cpu_to_le16(ETH_P_8021Q);
+		__le16 vlan_proto = cpu_to_le16(adapter->outer_vlan_proto);
 		u32 vet = (__force u32)((vlan_proto << E1000_VET_EXT_SHIFT) |
 					cpu_to_le16(ETH_P_8021Q));
 
@@ -3096,6 +3096,9 @@ static int igb_probe(struct pci_dev *pdev,
 
 	netdev->features =
 		igb_vlan_double_fix_features(netdev, netdev->features);
+
+	/* By default outer vlan header ethertype is the same as inner */
+	adapter->outer_vlan_proto = ETH_P_8021Q;
 
 #ifdef HAVE_NETDEVICE_MIN_MAX_MTU
 	/* MTU range: 68 - 9216 */
@@ -9344,7 +9347,7 @@ s32 e1000_write_pcie_cap_reg(struct e1000_hw *hw, u32 reg, u16 *value)
 static void igb_vlan_double_enable(struct igb_adapter *adapter)
 {
 	struct e1000_hw *hw = &adapter->hw;
-	__le16 vlan_proto = cpu_to_le16(ETH_P_8021Q);
+	__le16 vlan_proto = cpu_to_le16(adapter->outer_vlan_proto);
 	u32 ctrl_ext, vet;
 
 	ctrl_ext = E1000_READ_REG(hw, E1000_CTRL_EXT);
