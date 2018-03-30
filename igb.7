@@ -271,6 +271,20 @@ This parameter is forced to 1 or more if the max_vfs module parameter is used.
 In addition, the number of queues available for RSS is limited if this is set
 to 1 or greater.
 .LP
+.B DV (Double VLAN)
+.IP
+.B Valid Range: 0-1
+.IP
+0 = Disabled
+.IP
+1 = Enabled
+.IP
+Control Double VLAN mode on device. If enabled hardware assumes that at least
+single vlan header present in packet buffer and second header is skipped to
+enable rest of L2/L3 offloading processing (e.g. RSS). It is disabled by default
+since VID filtering, if enabled, is done in software by driver and not compatible
+with VMDq.
+.LP
 .B ethtool
 .LP
 The driver utilizes the ethtool interface for driver configuration and diagnostics, as well as displaying statistical information. The latest ethtool version is required for this functionality. Download it at:
