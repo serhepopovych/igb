@@ -565,6 +565,8 @@ struct igb_adapter {
 	unsigned int num_q_vectors;
 	struct msix_entry *msix_entries;
 
+	/* Outer VLAN Ethernet type */
+	u16 outer_vlan_proto;
 
 	/* TX */
 	u16 tx_work_limit;
