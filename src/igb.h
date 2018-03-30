@@ -839,7 +839,7 @@ extern void igb_configure_vt_default_pool(struct igb_adapter *adapter);
 extern void igb_enable_vlan_tags(struct igb_adapter *adapter);
 void igb_do_reset(struct net_device *netdev);
 #ifndef HAVE_VLAN_RX_REGISTER
-extern void igb_vlan_mode(struct net_device *, u32);
+extern void igb_vlan_mode(struct net_device *, netdev_features_t);
 #endif
 
 #define E1000_PCS_CFG_IGN_SD	1

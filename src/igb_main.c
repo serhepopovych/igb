@@ -2143,20 +2143,7 @@ static int igb_set_features(struct net_device *netdev,
 			    netdev_features_t features)
 #endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
 {
-	struct igb_adapter *adapter = netdev_priv(netdev);
 	netdev_features_t changed = netdev->features ^ features;
-
-#ifdef NETIF_F_HW_VLAN_CTAG_RX
-	if (changed & NETIF_F_HW_VLAN_CTAG_RX)
-#else
-	if (changed & NETIF_F_HW_VLAN_RX)
-#endif /* NETIF_F_HW_VLAN_CTAG_RX */
-		netdev->features = features;
-#ifdef HAVE_VLAN_RX_REGISTER
-		igb_vlan_mode(netdev, adapter->vlgrp);
-#else
-		igb_vlan_mode(netdev, features);
-#endif
 
 	if (!(changed & (NETIF_F_RXALL | NETIF_F_NTUPLE)))
 		return 0;
@@ -4690,6 +4677,11 @@ static void igb_set_rx_mode(struct net_device *netdev)
 	}
 	E1000_WRITE_REG(hw, E1000_RCTL, rctl);
 
+#ifdef HAVE_VLAN_RX_REGISTER
+	igb_vlan_mode(netdev, adapter->vlgrp);
+#else
+	igb_vlan_mode(netdev, netdev->features);
+#endif
 	/*
 	 * In order to support SR-IOV and eventually VMDq it is necessary to set
 	 * the VMOLR to enable the appropriate modes.  Without this workaround
@@ -8788,7 +8780,7 @@ s32 e1000_write_pcie_cap_reg(struct e1000_hw *hw, u32 reg, u16 *value)
 #ifdef HAVE_VLAN_RX_REGISTER
 static void igb_vlan_mode(struct net_device *netdev, struct vlan_group *vlgrp)
 #else
-void igb_vlan_mode(struct net_device *netdev, u32 features)
+void igb_vlan_mode(struct net_device *netdev, netdev_features_t features)
 #endif /* HAVE_VLAN_RX_REGISTER */
 {
 	struct igb_adapter *adapter = netdev_priv(netdev);
@@ -8954,8 +8946,6 @@ static void igb_vlan_rx_kill_vid(struct net_device *netdev, u16 vid)
 static void igb_restore_vlan(struct igb_adapter *adapter)
 {
 #ifdef HAVE_VLAN_RX_REGISTER
-	igb_vlan_mode(adapter->netdev, adapter->vlgrp);
-
 	if (adapter->vlgrp) {
 		u16 vid;
 
@@ -8972,8 +8962,6 @@ static void igb_restore_vlan(struct igb_adapter *adapter)
 	}
 #else
 	u16 vid;
-
-	igb_vlan_mode(adapter->netdev, adapter->netdev->features);
 
 	for_each_set_bit(vid, adapter->active_vlans, VLAN_N_VID)
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
