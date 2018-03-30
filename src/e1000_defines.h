@@ -419,9 +419,6 @@
 #define DEFAULT_80003ES2LAN_TIPG_IPGR2	7
 #define E1000_TIPG_IPGR2_SHIFT		20
 
-/* Ethertype field values */
-#define ETHERNET_IEEE_VLAN_TYPE		0x8100  /* 802.3ac packet */
-
 #define ETHERNET_FCS_SIZE		4
 #define MAX_JUMBO_FRAME_SIZE		0x3F00
 /* The datasheet maximum supported RX size is 9.5KB (9728 bytes) */
