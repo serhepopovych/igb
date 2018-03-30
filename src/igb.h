@@ -712,6 +712,8 @@ struct igb_vmdq_adapter {
 #define IGB_FLAG_LOOPBACK_ENABLE	BIT(13)
 #define IGB_FLAG_MEDIA_RESET		BIT(14)
 #define IGB_FLAG_MAS_ENABLE		BIT(15)
+#define IGB_FLAG_VLAN_STAG_RX		BIT(16)
+#define IGB_FLAG_VLAN_STAG_FILTER	BIT(17)
 
 /* Media Auto Sense */
 #define IGB_MAS_ENABLE_0		0X0001
@@ -834,6 +836,12 @@ extern int igb_ptp_hwtstamp_ioctl(struct net_device *netdev,
 #ifdef ETHTOOL_OPS_COMPAT
 extern int ethtool_ioctl(struct ifreq *);
 #endif
+#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
+u32 igb_vlan_double_fix_features(struct net_device *netdev, u32 features);
+#else
+netdev_features_t igb_vlan_double_fix_features(struct net_device *netdev,
+					       netdev_features_t features);
+#endif
 extern int igb_write_mc_addr_list(struct net_device *netdev);
 extern int igb_add_mac_filter(struct igb_adapter *adapter, u8 *addr, u16 queue);
 extern int igb_del_mac_filter(struct igb_adapter *adapter, u8 *addr, u16 queue);
@@ -842,6 +850,7 @@ extern s32 igb_vlvf_set(struct igb_adapter *, u32, bool, u32);
 extern void igb_configure_vt_default_pool(struct igb_adapter *adapter);
 extern void igb_enable_vlan_tags(struct igb_adapter *adapter);
 void igb_do_reset(struct net_device *netdev);
+void igb_set_rx_mode(struct net_device *netdev);
 #ifndef HAVE_VLAN_RX_REGISTER
 extern void igb_vlan_mode(struct net_device *, netdev_features_t);
 #endif
