@@ -56,6 +56,7 @@
 #define E1000_CTRL_EXT_LINK_MODE_PCIE_SERDES	0x00C00000
 #define E1000_CTRL_EXT_LINK_MODE_SGMII	0x00800000
 #define E1000_CTRL_EXT_EIAME		0x01000000
+#define E1000_CTRL_EXT_VLAN		0x04000000
 #define E1000_CTRL_EXT_IRCA		0x00000001
 #define E1000_CTRL_EXT_DRV_LOAD		0x10000000 /* Drv loaded bit for FW */
 #define E1000_CTRL_EXT_IAME		0x08000000 /* Int ACK Auto-mask */
@@ -86,7 +87,7 @@
 #define E1000_RXD_STAT_TCPCS	0x20    /* TCP xsum calculated */
 #define E1000_RXD_STAT_IPCS	0x40    /* IP xsum calculated */
 #define E1000_RXD_STAT_PIF	0x80    /* passed in-exact filter */
-#define E1000_RXD_STAT_IPIDV	0x200   /* IP identification valid */
+#define E1000_RXD_STAT_VEXT	0x200   /* First VLAN in double VLAN packet */
 #define E1000_RXD_STAT_UDPV	0x400   /* Valid UDP checksum */
 #define E1000_RXD_STAT_DYNINT	0x800   /* Pkt caused INT via DYNINT */
 #define E1000_RXD_ERR_CE	0x01    /* CRC Error */
@@ -384,6 +385,9 @@
 #define E1000_CT_SHIFT			4
 #define E1000_COLLISION_DISTANCE	63
 #define E1000_COLD_SHIFT		12
+
+/* Double VLAN EtherType */
+#define E1000_VET_EXT_SHIFT		16
 
 /* Default values for the transmit IPG register */
 #define DEFAULT_82543_TIPG_IPGT_FIBER	9
