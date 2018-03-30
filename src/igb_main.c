@@ -2091,7 +2091,7 @@ void igb_reset(struct igb_adapter *adapter)
 	igb_update_mng_vlan(adapter);
 
 	/* Enable h/w to recognize an 802.1Q VLAN Ethernet packet */
-	E1000_WRITE_REG(hw, E1000_VET, ETHERNET_IEEE_VLAN_TYPE);
+	E1000_WRITE_REG(hw, E1000_VET, ETH_P_8021Q);
 
 #ifdef HAVE_PTP_1588_CLOCK
 	/* Re-enable PTP, where applicable. */
