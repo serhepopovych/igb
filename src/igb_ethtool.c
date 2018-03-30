@@ -2974,10 +2974,7 @@ static int igb_set_eee(struct net_device *netdev,
 		hw->dev_spec._82575.eee_disable = !edata->eee_enabled;
 
 		/* reset link */
-		if (netif_running(netdev))
-			igb_reinit_locked(adapter);
-		else
-			igb_reset(adapter);
+		igb_do_reset(netdev);
 	}
 
 	if (hw->mac.type == e1000_i354)
