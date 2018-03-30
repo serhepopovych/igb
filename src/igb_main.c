@@ -2112,6 +2112,16 @@ void igb_reset(struct igb_adapter *adapter)
 	adapter->devrc++;
 }
 
+void igb_do_reset(struct net_device *netdev)
+{
+	struct igb_adapter *adapter = netdev_priv(netdev);
+
+	if (netif_running(netdev))
+		igb_reinit_locked(adapter);
+	else
+		igb_reset(adapter);
+}
+
 #ifdef HAVE_NDO_SET_FEATURES
 #ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 static u32 igb_fix_features(struct net_device *netdev,
@@ -2183,10 +2193,7 @@ static int igb_set_features(struct net_device *netdev,
 
 	netdev->features = features;
 
-	if (netif_running(netdev))
-		igb_reinit_locked(adapter);
-	else
-		igb_reset(adapter);
+	igb_do_reset(netdev);
 
 	return 0;
 }
