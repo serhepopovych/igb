@@ -2761,7 +2761,7 @@ static int igb_set_flags(struct net_device *netdev, u32 data)
 #ifndef HAVE_VLAN_RX_REGISTER
 
 	if (changed & ETH_FLAG_RXVLAN)
-		igb_vlan_mode(netdev, data);
+		igb_vlan_mode(netdev, (netdev_features_t)data);
 #endif
 
 	return 0;
