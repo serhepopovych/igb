@@ -150,6 +150,15 @@ static const char igb_gstrings_test[][ETH_GSTRING_LEN] = {
 #define IGB_TEST_LEN (sizeof(igb_gstrings_test) / ETH_GSTRING_LEN)
 #endif /* ETHTOOL_TEST */
 
+static const char igb_priv_flags_strings[][ETH_GSTRING_LEN] = {
+#define IGB_PRIV_FLAGS_VLAN_STAG_RX			BIT(0)
+	"vlan-stag-rx",
+#define IGB_PRIV_FLAGS_VLAN_STAG_FILTER			BIT(1)
+	"vlan-stag-filter",
+};
+
+#define IGB_PRIV_FLAGS_STR_LEN ARRAY_SIZE(igb_priv_flags_strings)
+
 static int igb_get_settings(struct net_device *netdev, struct ethtool_cmd *ecmd)
 {
 	struct igb_adapter *adapter = netdev_priv(netdev);
@@ -830,6 +839,7 @@ static void igb_get_drvinfo(struct net_device *netdev,
 		sizeof(drvinfo->fw_version) - 1);
 	strncpy(drvinfo->bus_info, pci_name(adapter->pdev),
 		sizeof(drvinfo->bus_info) - 1);
+	drvinfo->n_priv_flags = IGB_PRIV_FLAGS_STR_LEN;
 	drvinfo->n_stats = IGB_STATS_LEN;
 	drvinfo->testinfo_len = IGB_TEST_LEN;
 	drvinfo->regdump_len = igb_get_regs_len(netdev);
@@ -2068,6 +2078,8 @@ static int igb_get_sset_count(struct net_device *netdev, int sset)
 		return IGB_STATS_LEN;
 	case ETH_SS_TEST:
 		return IGB_TEST_LEN;
+	case ETH_SS_PRIV_FLAGS:
+		return IGB_PRIV_FLAGS_STR_LEN;
 	default:
 		return -ENOTSUPP;
 	}
@@ -2164,6 +2176,10 @@ static void igb_get_strings(struct net_device *netdev, u32 stringset, u8 *data)
 			p += ETH_GSTRING_LEN;
 		}
 /*		BUG_ON(p - data != IGB_STATS_LEN * ETH_GSTRING_LEN); */
+		break;
+	case ETH_SS_PRIV_FLAGS:
+		memcpy(data, igb_priv_flags_strings,
+		       IGB_PRIV_FLAGS_STR_LEN * ETH_GSTRING_LEN);
 		break;
 	}
 }
@@ -2324,8 +2340,8 @@ tso_out:
 #ifdef ETHTOOL_GFLAGS
 static int igb_set_flags(struct net_device *netdev, u32 data)
 {
-	u32 supported_flags = ETH_FLAG_RXVLAN | ETH_FLAG_TXVLAN |
-			      ETH_FLAG_RXHASH;
+	struct igb_adapter *adapter = netdev_priv(netdev);
+	u32 supported_flags = ETH_FLAG_RXVLAN | ETH_FLAG_RXHASH;
 #ifndef HAVE_VLAN_RX_REGISTER
 	u32 changed = netdev->features ^ data;
 #endif
@@ -2334,6 +2350,8 @@ static int igb_set_flags(struct net_device *netdev, u32 data)
 
 	supported_flags |= ETH_FLAG_LRO;
 #endif
+	if (!(adapter->flags & IGB_FLAG_VLAN_STAG_RX))
+		supported_flags |= ETH_FLAG_TXVLAN;
 	/*
 	 * Since there is no support for separate tx vlan accel
 	 * enabled make sure tx flag is cleared if rx is.
@@ -3074,6 +3092,106 @@ static int igb_set_channels(struct net_device *dev,
 }
 
 #endif /* ETHTOOL_SCHANNELS */
+
+static u32 igb_get_priv_flags(struct net_device *netdev)
+{
+	struct igb_adapter *adapter = netdev_priv(netdev);
+	u32 priv_flags = 0;
+
+	if (adapter->flags & IGB_FLAG_VLAN_STAG_RX)
+		priv_flags |= IGB_PRIV_FLAGS_VLAN_STAG_RX;
+
+	if (adapter->flags & IGB_FLAG_VLAN_STAG_FILTER)
+		priv_flags |= IGB_PRIV_FLAGS_VLAN_STAG_FILTER;
+
+	return priv_flags;
+}
+
+static int igb_set_priv_flags(struct net_device *netdev, u32 priv_flags)
+{
+	struct igb_adapter *adapter = netdev_priv(netdev);
+	u32 changed = igb_get_priv_flags(netdev) ^ priv_flags;
+	enum {
+		IGB_SPF_NONE		= 0,
+		IGB_SPF_REINIT_LOCKED	= (1 << 0),
+		IGB_SPF_RESET		= (1 << 1),
+		IGB_SPF_SET_RX_MODE	= (1 << 2),
+		IGB_SPF_SET_FEATURES	= (1 << 3),
+	} do_reset = IGB_SPF_NONE;
+
+	if (!changed)
+		return 0;
+
+	/* Global Double VLAN features handling */
+	if (changed & IGB_PRIV_FLAGS_VLAN_STAG_RX) {
+		/* VMDq requires vlan filtering to be enbled */
+		if (!(adapter->vfs_allocated_count || adapter->vmdq_pools) &&
+		    (priv_flags & IGB_PRIV_FLAGS_VLAN_STAG_RX)) {
+			/* Turn on STAG filter by default: user might
+			 * turn it off later if required.
+			 */
+			if (!(adapter->flags & IGB_FLAG_VLAN_STAG_RX)) {
+#ifndef HAVE_VLAN_RX_REGISTER
+				adapter->flags |=
+						(IGB_FLAG_VLAN_STAG_RX|
+						 IGB_FLAG_VLAN_STAG_FILTER);
+#else
+				/* No filtering by driver by default: there
+				 * are setups with old kernels where filtering
+				 * might be broken (e.g. vlan on top of macvlan)
+				 */
+				adapter->flags |=
+						(IGB_FLAG_VLAN_STAG_RX);
+#endif
+			}
+		} else {
+			/* No filtering by outer tag without outer VLAN
+			 * header acceleration on receive.
+			 */
+			adapter->flags &= ~(IGB_FLAG_VLAN_STAG_RX |
+					    IGB_FLAG_VLAN_STAG_FILTER);
+		}
+
+		changed &= ~IGB_PRIV_FLAGS_VLAN_STAG_FILTER;
+		do_reset |= IGB_SPF_SET_FEATURES;
+	}
+
+	if (changed & IGB_PRIV_FLAGS_VLAN_STAG_FILTER) {
+		if (adapter->flags & IGB_FLAG_VLAN_STAG_RX) {
+			adapter->flags ^= IGB_FLAG_VLAN_STAG_FILTER;
+			do_reset |= IGB_SPF_SET_FEATURES;
+		}
+	}
+
+	if (do_reset & IGB_SPF_SET_FEATURES) {
+		typeof(netdev->features) features = netdev->features;
+
+		features = igb_vlan_double_fix_features(netdev, features);
+		if (features != netdev->features) {
+			netdev->features = features;
+			netdev_features_change(netdev);
+		}
+
+		do_reset |= IGB_SPF_SET_RX_MODE;
+	}
+
+	if (do_reset & IGB_SPF_RESET) {
+		igb_do_reset(netdev);
+		do_reset &= ~IGB_SPF_SET_RX_MODE;
+	} else if (do_reset & IGB_SPF_REINIT_LOCKED) {
+		/* reset interface to repopulate queues */
+		if (netif_running(netdev)) {
+			igb_reinit_locked(adapter);
+			do_reset &= ~IGB_SPF_SET_RX_MODE;
+		}
+	}
+
+	if (do_reset & IGB_SPF_SET_RX_MODE)
+		igb_set_rx_mode(netdev);
+
+	return 0;
+}
+
 static const struct ethtool_ops igb_ethtool_ops = {
 	.get_settings           = igb_get_settings,
 	.set_settings           = igb_set_settings,
@@ -3114,6 +3232,8 @@ static const struct ethtool_ops igb_ethtool_ops = {
 #endif
 	.get_coalesce           = igb_get_coalesce,
 	.set_coalesce           = igb_set_coalesce,
+	.get_priv_flags         = igb_get_priv_flags,
+	.set_priv_flags         = igb_set_priv_flags,
 #ifndef HAVE_RHEL6_ETHTOOL_OPS_EXT_STRUCT
 #ifdef HAVE_ETHTOOL_GET_TS_INFO
 	.get_ts_info            = igb_get_ts_info,

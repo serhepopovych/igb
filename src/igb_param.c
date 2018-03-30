@@ -240,6 +240,16 @@ IGB_PARAM(DMAC,
 IGB_PARAM(LRO, "Large Receive Offload (0,1), default 0=off");
 
 #endif
+
+/* Enable/disable Double VLAN support
+ *
+ * Valid Range: 0, 1
+ *
+ * Default Value: 0
+ */
+IGB_PARAM(DV,
+	"Enable/disable Double VLAN support on 82575EB+ adapters, default 0 = Disable");
+
 struct igb_opt_list {
 	int i;
 	char *str;
@@ -529,6 +539,13 @@ void igb_check_options(struct igb_adapter *adapter)
 				break;
 			}
 		}
+
+		if (adapter->flags & IGB_FLAG_VLAN_STAG_RX) {
+			DPRINTK(PROBE, INFO,
+				"%s option isn't compatible with %s. Disabling %s.\n",
+				"SR-IOV", "Double VLAN", "SR-IOV");
+			adapter->vfs_allocated_count = 0;
+		}
 	}
 	{ /* VMDQ - Enable VMDq multiqueue receive */
 		struct igb_option opt = {
@@ -578,6 +595,13 @@ void igb_check_options(struct igb_adapter *adapter)
 		adapter->vmdq_pools = opt.def;
 #endif
 	}
+
+		if (adapter->flags & IGB_FLAG_VLAN_STAG_RX) {
+			DPRINTK(PROBE, INFO,
+				"%s option isn't compatible with %s. Disabling %s.\n",
+				"VMDq", "Double VLAN", "VMDq");
+			adapter->vmdq_pools = 0;
+		}
 	}
 	{ /* RSS - Enable RSS multiqueue receives */
 		struct igb_option opt = {
@@ -871,6 +895,54 @@ void igb_check_options(struct igb_adapter *adapter)
 			adapter->mdd = opt.def;
 		}
 #endif
+	}
+	{ /* DV - Enable Double VLAN support */
+#ifndef HAVE_VLAN_RX_REGISTER
+		const u32 vlan_stag_rx = IGB_FLAG_VLAN_STAG_RX|
+					 IGB_FLAG_VLAN_STAG_FILTER;
+#else
+		/* No filtering by driver by default: there
+		 * are setups with old kernels where filtering
+		 * might be broken (e.g. vlan on top of macvlan)
+		 */
+		const u32 vlan_stag_rx = IGB_FLAG_VLAN_STAG_RX;
+#endif
+		struct igb_option opt = {
+			.type = enable_option,
+			.name = "Double VLAN",
+			.err  = "defaulting to 0 (disabled)",
+			.def  = OPTION_DISABLED,
+		};
+
+		adapter->flags &= ~vlan_stag_rx;
+
+#ifdef module_param_array
+		if (num_DV > bd) {
+#endif
+			unsigned int dv = DV[bd];
+
+			igb_validate_option(&dv, &opt, adapter);
+			if (dv)
+				adapter->flags |= vlan_stag_rx;
+#ifdef module_param_array
+		} else {
+			if (opt.def == OPTION_ENABLED)
+				adapter->flags |= vlan_stag_rx;
+		}
+#endif
+		DPRINTK(PROBE, INFO, "Double VLAN feature %sabled\n",
+			(adapter->flags & IGB_FLAG_VLAN_STAG_RX) ?
+			"en" : "dis");
+
+		/* Check Interoperability */
+		if (adapter->flags & IGB_FLAG_VLAN_STAG_RX) {
+			if (adapter->vfs_allocated_count || adapter->vmdq_pools) {
+				DPRINTK(PROBE, INFO,
+					"%s option isn't compatible with %s. Disabling %s.\n",
+					"Double VLAN", "SR-IOV/VMDq", "Double VLAN");
+				adapter->flags &= ~vlan_stag_rx;
+			}
+		}
 	}
 }
 
