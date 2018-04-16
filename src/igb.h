@@ -410,6 +410,9 @@ struct igb_q_vector {
 	int cpu;			/* CPU for DCA */
 	u32 eims_value;			/* EIMS mask value */
 
+	cpumask_t affinity_mask;
+	int numa_node;
+
 	u16 itr_val;
 	u8 set_itr;
 	void __iomem *itr_register;
@@ -438,6 +441,7 @@ enum e1000_ring_flags_t {
 	IGB_RING_FLAG_RX_LB_VLAN_BSWAP,
 	IGB_RING_FLAG_TX_CTX_IDX,
 	IGB_RING_FLAG_TX_DETECT_HANG,
+	IGB_TX_XPS_INIT_DONE,
 };
 
 struct igb_mac_addr {
