@@ -265,6 +265,10 @@ struct msix_entry {
 	.subvendor = PCI_ANY_ID, .subdevice = PCI_ANY_ID
 #endif
 
+#ifndef NUMA_NO_NODE
+#define NUMA_NO_NODE (-1)
+#endif
+
 #ifndef node_online
 #define node_online(node) ((node) == 0)
 #endif
