@@ -639,9 +639,10 @@ static int igb_request_msix(struct igb_adapter *adapter)
 	unsigned int num_q_vectors = adapter->num_q_vectors;
 	struct net_device *netdev = adapter->netdev;
 	int i, err = 0, vector = 0, free_vector = 0;
+	struct msix_entry *entry = &adapter->msix_entries[vector];
 
-	err = request_irq(adapter->msix_entries[vector].vector,
-			  &igb_msix_other, 0, netdev->name, adapter);
+	err = request_irq(entry->vector, igb_msix_other, 0,
+			  netdev->name, adapter);
 	if (err)
 		goto err_out;
 
@@ -656,7 +657,7 @@ static int igb_request_msix(struct igb_adapter *adapter)
 		const int name_size = min(sizeof(q_vector->name),
 					  sizeof(netdev->name));
 
-		vector++;
+		entry = &adapter->msix_entries[++vector];
 
 		q_vector->itr_register = adapter->io_addr + E1000_EITR(vector);
 
@@ -676,24 +677,30 @@ static int igb_request_msix(struct igb_adapter *adapter)
 			snprintf(q_vector->name, name_size,
 				"%s-unused", netdev->name);
 
-		err = request_irq(adapter->msix_entries[vector].vector,
-				  igb_msix_ring, 0, q_vector->name,
-				  q_vector);
+		err = request_irq(entry->vector, igb_msix_ring, 0,
+				  q_vector->name, q_vector);
 		if (err)
 			goto err_free;
+
+		/* assign the mask for this irq */
+		irq_set_affinity_hint(entry->vector, &q_vector->affinity_mask);
 	}
 
 	igb_configure_msix(adapter);
 	return 0;
 
 err_free:
+	entry = &adapter->msix_entries[free_vector];
+
 	/* free already assigned IRQs */
-	free_irq(adapter->msix_entries[free_vector++].vector, adapter);
+	free_irq(entry->vector, adapter);
 
 	vector--;
 	for (i = 0; i < vector; i++) {
-		free_irq(adapter->msix_entries[free_vector++].vector,
-			 adapter->q_vector[i]);
+		entry = &adapter->msix_entries[++free_vector];
+
+		irq_set_affinity_hint(entry->vector, NULL);
+		free_irq(entry->vector, adapter->q_vector[i]);
 	}
 err_out:
 	return err;
@@ -1109,6 +1116,8 @@ static int igb_alloc_q_vector(struct igb_adapter *adapter,
 {
 	struct igb_q_vector *q_vector;
 	struct igb_ring *ring;
+	int node = NUMA_NO_NODE;
+	int cpu = -1;
 	int ring_count, size;
 
 	/* igb only supports 1 Tx and/or 1 Rx queue per vector */
@@ -1119,14 +1128,30 @@ static int igb_alloc_q_vector(struct igb_adapter *adapter,
 	size = sizeof(struct igb_q_vector) +
 	       (sizeof(struct igb_ring) * ring_count);
 
+	if (adapter->rss_queues > 1 &&
+	    !(adapter->vfs_allocated_count || adapter->vmdq_pools)) {
+		if (cpu_online(v_idx)) {
+			cpu = v_idx;
+			node = cpu_to_node(cpu);
+		}
+	}
+
 	/* allocate q_vector and rings */
 	q_vector = adapter->q_vector[v_idx];
-	if (!q_vector)
-		q_vector = kzalloc(size, GFP_KERNEL);
-	else
+	if (!q_vector) {
+		q_vector = kzalloc_node(size, GFP_KERNEL, node);
+		if (!q_vector)
+			q_vector = kzalloc(size, GFP_KERNEL);
+		if (!q_vector)
+			return -ENOMEM;
+	} else {
 		memset(q_vector, 0, size);
-	if (!q_vector)
-		return -ENOMEM;
+	}
+
+	/* setup affinity mask and node */
+	if (cpu != -1)
+		cpumask_set_cpu(cpu, &q_vector->affinity_mask);
+	q_vector->numa_node = node;
 
 #ifndef IGB_NO_LRO
 	/* initialize LRO */
@@ -1370,12 +1395,18 @@ static void igb_free_irq(struct igb_adapter *adapter)
 {
 	if (adapter->msix_entries) {
 		int vector = 0, i;
+		struct msix_entry *entry = &adapter->msix_entries[vector];
 
-		free_irq(adapter->msix_entries[vector++].vector, adapter);
+		free_irq(entry->vector, adapter);
 
-		for (i = 0; i < adapter->num_q_vectors; i++)
-			free_irq(adapter->msix_entries[vector++].vector,
-				 adapter->q_vector[i]);
+		for (i = 0; i < adapter->num_q_vectors; i++) {
+			entry = &adapter->msix_entries[++vector];
+
+			/* clear the affinity_mask in the IRQ descriptor */
+			irq_set_affinity_hint(entry->vector, NULL);
+
+			free_irq(entry->vector, adapter->q_vector[i]);
+		}
 	} else {
 		free_irq(adapter->pdev->irq, adapter);
 	}
@@ -3702,10 +3733,18 @@ int igb_close(struct net_device *netdev)
 int igb_setup_tx_resources(struct igb_ring *tx_ring)
 {
 	struct device *dev = tx_ring->dev;
+	int orig_node = dev_to_node(dev);
+	int ring_node = NUMA_NO_NODE;
 	int size;
 
 	size = sizeof(struct igb_tx_buffer) * tx_ring->count;
-	tx_ring->tx_buffer_info = vzalloc(size);
+
+	if (tx_ring->q_vector)
+		ring_node = tx_ring->q_vector->numa_node;
+
+	tx_ring->tx_buffer_info = vzalloc_node(size, ring_node);
+	if (!tx_ring->tx_buffer_info)
+		tx_ring->tx_buffer_info = vzalloc(size);
 	if (!tx_ring->tx_buffer_info)
 		goto err;
 
@@ -3713,9 +3752,13 @@ int igb_setup_tx_resources(struct igb_ring *tx_ring)
 	tx_ring->size = tx_ring->count * sizeof(union e1000_adv_tx_desc);
 	tx_ring->size = ALIGN(tx_ring->size, 4096);
 
+	set_dev_node(dev, ring_node);
 	tx_ring->desc = dma_alloc_coherent(dev, tx_ring->size,
 					   &tx_ring->dma, GFP_KERNEL);
-
+	set_dev_node(dev, orig_node);
+	if (!tx_ring->desc)
+		tx_ring->desc = dma_alloc_coherent(dev, tx_ring->size,
+						   &tx_ring->dma, GFP_KERNEL);
 	if (!tx_ring->desc)
 		goto err;
 
@@ -3835,6 +3878,18 @@ void igb_configure_tx_ring(struct igb_adapter *adapter,
 	txdctl |= igb_tx_wthresh(adapter) << 16;
 
 	txdctl |= E1000_TXDCTL_QUEUE_ENABLE;
+
+	/* initialize XPS */
+	if (!test_and_set_bit(IGB_TX_XPS_INIT_DONE, &ring->flags)) {
+		struct igb_q_vector *q_vector = ring->q_vector;
+
+		if (q_vector)
+			netif_set_xps_queue(ring->netdev,
+					    &q_vector->affinity_mask,
+					    ring->queue_index);
+	}
+
+	/* enable the queue */
 	E1000_WRITE_REG(hw, E1000_TXDCTL(reg_idx), txdctl);
 }
 
@@ -3861,10 +3916,18 @@ static void igb_configure_tx(struct igb_adapter *adapter)
 int igb_setup_rx_resources(struct igb_ring *rx_ring)
 {
 	struct device *dev = rx_ring->dev;
+	int orig_node = dev_to_node(dev);
+	int ring_node = NUMA_NO_NODE;
 	int size, desc_len;
 
 	size = sizeof(struct igb_rx_buffer) * rx_ring->count;
-	rx_ring->rx_buffer_info = vzalloc(size);
+
+	if (rx_ring->q_vector)
+		ring_node = rx_ring->q_vector->numa_node;
+
+	rx_ring->rx_buffer_info = vzalloc_node(size, ring_node);
+	if (!rx_ring->rx_buffer_info)
+		rx_ring->rx_buffer_info = vzalloc(size);
 	if (!rx_ring->rx_buffer_info)
 		goto err;
 
@@ -3874,9 +3937,13 @@ int igb_setup_rx_resources(struct igb_ring *rx_ring)
 	rx_ring->size = rx_ring->count * desc_len;
 	rx_ring->size = ALIGN(rx_ring->size, 4096);
 
+	set_dev_node(dev, ring_node);
 	rx_ring->desc = dma_alloc_coherent(dev, rx_ring->size,
 					   &rx_ring->dma, GFP_KERNEL);
-
+	set_dev_node(dev, orig_node);
+	if (!rx_ring->desc)
+		rx_ring->desc = dma_alloc_coherent(dev, rx_ring->size,
+						   &rx_ring->dma, GFP_KERNEL);
 	if (!rx_ring->desc)
 		goto err;
 
