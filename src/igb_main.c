@@ -9500,14 +9500,17 @@ int igb_del_mac_filter(struct igb_adapter *adapter, u8 *addr, u16 queue)
 	if (is_zero_ether_addr(addr))
 		return 0;
 	for (i = 0; i < hw->mac.rar_entry_count; i++) {
-		if (!ether_addr_equal(addr, adapter->mac_table[i].addr) &&
-		    adapter->mac_table[i].queue == queue) {
-			adapter->mac_table[i].state = IGB_MAC_STATE_MODIFIED;
-			memset(adapter->mac_table[i].addr, 0, ETH_ALEN);
-			adapter->mac_table[i].queue = 0;
-			igb_sync_mac_table(adapter);
-			return 0;
-		}
+		if (adapter->mac_table[i].queue != queue)
+			continue;
+		if (!ether_addr_equal(addr, adapter->mac_table[i].addr))
+			continue;
+
+		adapter->mac_table[i].state = IGB_MAC_STATE_MODIFIED;
+		memset(adapter->mac_table[i].addr, 0, ETH_ALEN);
+		adapter->mac_table[i].queue = 0;
+
+		igb_sync_mac_table(adapter);
+		return 0;
 	}
 	return -ENOMEM;
 }
