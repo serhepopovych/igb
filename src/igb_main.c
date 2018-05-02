@@ -2151,14 +2151,23 @@ static int igb_set_features(struct net_device *netdev,
 #endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
 {
 	netdev_features_t changed = netdev->features ^ features;
+	bool need_reset = false;
 
-	if (!(changed & (NETIF_F_RXALL | NETIF_F_NTUPLE)))
-		return 0;
+	if (changed & (NETIF_F_RXALL | NETIF_F_NTUPLE))
+		need_reset = true;
 
 	netdev->features = features;
 
-	igb_do_reset(netdev);
-
+	if (need_reset)
+		igb_do_reset(netdev);
+#ifdef NETIF_F_HW_VLAN_CTAG_FILTER
+	else if (changed & NETIF_F_HW_VLAN_CTAG_FILTER)
+		igb_set_rx_mode(netdev);
+#endif
+#ifdef NETIF_F_HW_VLAN_FILTER
+	else if (changed & NETIF_F_HW_VLAN_FILTER)
+		igb_set_rx_mode(netdev);
+#endif
 	return 1;
 }
 #endif /* HAVE_NDO_SET_FEATURES */
@@ -2891,6 +2900,12 @@ static int igb_probe(struct pci_dev *pdev,
 			    NETIF_F_RXHASH |
 #endif
 			    NETIF_F_RXCSUM |
+#ifdef NETIF_F_HW_VLAN_CTAG_FILTER
+			    NETIF_F_HW_VLAN_CTAG_FILTER |
+#endif
+#ifdef NETIF_F_HW_VLAN_FILTER
+			    NETIF_F_HW_VLAN_FILTER |
+#endif
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
 			    NETIF_F_HW_VLAN_CTAG_RX |
 			    NETIF_F_HW_VLAN_CTAG_TX |
@@ -2939,10 +2954,6 @@ static int igb_probe(struct pci_dev *pdev,
 	netdev->features |= NETIF_F_GRO;
 #endif /* NETIF_F_GRO */
 #endif /* HAVE_NDO_SET_FEATURES */
-
-#ifdef NETIF_F_HW_VLAN_TX
-	netdev->features |= NETIF_F_HW_VLAN_FILTER;
-#endif /* NETIF_F_HW_VLAN_TX */
 
 #ifdef HAVE_NDO_SET_FEATURES
 	hw_features |=
@@ -4770,6 +4781,7 @@ static void igb_set_rx_mode(struct net_device *netdev)
 	struct e1000_hw *hw = &adapter->hw;
 	unsigned int vfn = adapter->vfs_allocated_count;
 	u32 rctl, vmolr = 0;
+	netdev_features_t __maybe_unused features = netdev->features;
 	int count;
 
 	/* Check for Promiscuous and All Multicast modes */
@@ -4781,10 +4793,28 @@ static void igb_set_rx_mode(struct net_device *netdev)
 	if (netdev->flags & IFF_PROMISC) {
 		rctl |= (E1000_RCTL_UPE | E1000_RCTL_MPE);
 		vmolr |= (E1000_VMOLR_ROPE | E1000_VMOLR_MPME);
-		/* retain VLAN HW filtering if in VT mode */
-		if (adapter->vfs_allocated_count || adapter->vmdq_pools)
-			rctl |= E1000_RCTL_VFE;
 	} else {
+		int enable;
+
+#ifdef HAVE_VLAN_RX_REGISTER
+		enable = !!adapter->vlgrp;
+#ifdef HAVE_NDO_SET_FEATURES
+#ifdef NETIF_F_HW_VLAN_CTAG_RX
+		enable &= !!(features & NETIF_F_HW_VLAN_CTAG_FILTER);
+#else
+		enable &= !!(features & NETIF_F_HW_VLAN_FILTER);
+#endif
+#endif /* HAVE_NDO_SET_FEATURES */
+#else /* !HAVE_VLAN_RX_REGISTER */
+#ifdef NETIF_F_HW_VLAN_CTAG_RX
+		enable = !!(features & NETIF_F_HW_VLAN_CTAG_FILTER);
+#else
+		enable = !!(features & NETIF_F_HW_VLAN_FILTER);
+#endif
+#endif /* HAVE_VLAN_RX_REGISTER */
+		if (enable)
+			/* enable hardware vlan filtering */
+			rctl |= E1000_RCTL_VFE;
 		if (netdev->flags & IFF_ALLMULTI) {
 			rctl |= E1000_RCTL_MPE;
 			vmolr |= E1000_VMOLR_MPME;
@@ -4814,14 +4844,18 @@ static void igb_set_rx_mode(struct net_device *netdev)
 			vmolr |= E1000_VMOLR_ROPE;
 		}
 #endif /* HAVE_SET_RX_MODE */
-		rctl |= E1000_RCTL_VFE;
 	}
+
+	/* retain VLAN HW filtering if in VT mode */
+	if (adapter->vfs_allocated_count || adapter->vmdq_pools)
+		rctl |= E1000_RCTL_VFE;
+
 	E1000_WRITE_REG(hw, E1000_RCTL, rctl);
 
 #ifdef HAVE_VLAN_RX_REGISTER
 	igb_vlan_mode(netdev, adapter->vlgrp);
 #else
-	igb_vlan_mode(netdev, netdev->features);
+	igb_vlan_mode(netdev, features);
 #endif
 	/*
 	 * In order to support SR-IOV and eventually VMDq it is necessary to set
