@@ -74,6 +74,16 @@
 #endif
 #endif
 
+/* This is default configuration of igb driver for
+ * software packet forwarding platform.
+ *
+ * We disable following features:
+ *  - LRO
+ *  - Packet split (we are running on platforms without IOMMU)
+ */
+#define DISABLE_PACKET_SPLIT
+#define IGB_NO_LRO
+
 /* NAPI enable/disable flags here */
 #define NAPI
 
