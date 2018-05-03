@@ -463,12 +463,10 @@ static inline u16 igb_desc_unused(const struct igb_ring *ring)
 	return ((ntc > ntu) ? 0 : ring->count) + ntc - ntu - 1;
 }
 
-#ifdef CONFIG_BQL
 static inline struct netdev_queue *txring_txq(const struct igb_ring *tx_ring)
 {
 	return netdev_get_tx_queue(tx_ring->netdev, tx_ring->queue_index);
 }
-#endif /* CONFIG_BQL */
 
 struct igb_therm_proc_data {
 	struct e1000_hw *hw;
