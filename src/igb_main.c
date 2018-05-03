@@ -3891,14 +3891,11 @@ static void igb_setup_mrqc(struct igb_adapter *adapter)
 #ifndef ETHTOOL_SRXFHINDIR
 	u32 shift = 0, shift2 = 0;
 #endif /* ETHTOOL_SRXFHINDIR */
-	static const u32 rsskey[10] = { 0xDA565A6D, 0xC20E5B25, 0x3D256741,
-					0xB08FA343, 0xCB2BCAD0, 0xB4307BAE,
-					0xA32DCB77, 0x0CF23080, 0x3BB7426A,
-					0xFA01ACBE };
+	u32 rss_key[10];
 
-	/* Fill out hash function seeds */
+	netdev_rss_key_fill(rss_key, sizeof(rss_key));
 	for (j = 0; j < 10; j++)
-		E1000_WRITE_REG(hw, E1000_RSSRK(j), rsskey[j]);
+		E1000_WRITE_REG(hw, E1000_RSSRK(j), rss_key[j]);
 
 	num_rx_queues = adapter->rss_queues;
 
