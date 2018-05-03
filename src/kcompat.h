@@ -4780,10 +4780,8 @@ int __kc_netif_set_xps_queue(struct net_device *, const struct cpumask *, u16);
 #define netif_set_xps_queue(_dev, _mask, _idx) do {} while (0)
 #endif /* CONFIG_XPS */
 
-#ifdef HAVE_NETDEV_SELECT_QUEUE
-#define _kc_hashrnd 0xd631614b /* not so random hash salt */
-u16 __kc_netdev_pick_tx(struct net_device *dev, struct sk_buff *skb);
-#define __netdev_pick_tx __kc_netdev_pick_tx
+#ifndef HAVE_NETDEV_SELECT_QUEUE
+#define __netdev_pick_tx(...) (0)
 #endif /* HAVE_NETDEV_SELECT_QUEUE */
 #else
 #define HAVE_BRIDGE_FILTER
