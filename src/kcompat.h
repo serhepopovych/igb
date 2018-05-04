@@ -3080,7 +3080,6 @@ void _kc_pci_clear_main(struct pci_dev *dev);
 #define skb_rx_queue_recorded(a) false
 #define skb_get_rx_queue(a) 0
 #define skb_record_rx_queue(a, b) do {} while (0)
-#define skb_tx_hash(n, s) ___kc_skb_tx_hash((n), (s), (n)->real_num_tx_queues)
 #ifndef CONFIG_PCI_IOV
 #undef pci_enable_sriov
 #define pci_enable_sriov(a, b) -ENOTSUPP
@@ -3250,6 +3249,7 @@ static inline int _kc_pm_runtime_get_sync(struct device __always_unused *dev)
      (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7,0)))
 #define HAVE_RHEL6_NET_DEVICE_OPS_EXT
 #define HAVE_NDO_SET_FEATURES
+#define skb_set_hash skb_set_hash
 #endif /* RHEL >= 6.6 && RHEL < 7.0 */
 #ifdef CONFIG_DCB
 #ifndef HAVE_DCBNL_OPS_GETAPP
@@ -5101,6 +5101,20 @@ static inline void __kc_skb_set_hash(struct sk_buff __maybe_unused *skb,
 }
 #endif /* !skb_set_hash */
 
+#if (!(RHEL_RELEASE_CODE && RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7,1)))
+#ifndef skb_get_hash_raw
+#define skb_get_hash_raw __kc_skb_get_hash_raw
+static inline u32 __kc_skb_get_hash_raw(const struct sk_buff __maybe_unused *skb)
+{
+#ifdef NETIF_F_RXHASH
+	return skb->rxhash;
+#else
+	return 0;
+#endif
+}
+#endif /* skb_get_hash_raw */
+#endif /* RHEL_RELEASE_CODE >= 7.1 */
+
 #else	/* RHEL_RELEASE_CODE >= 7.0 || SLE_VERSION_CODE >= 12.0 */
 
 #if ((RHEL_RELEASE_CODE && RHEL_RELEASE_CODE <= RHEL_RELEASE_VERSION(7,0)) ||\
@@ -5172,18 +5186,6 @@ int __kc_ipv6_find_hdr(const struct sk_buff *skb, unsigned int *offset,
 #define OPTIMIZE_HIDE_VAR(var)	barrier()
 #endif
 #endif
-
-#if (!(RHEL_RELEASE_CODE && RHEL_RELEASE_CODE > RHEL_RELEASE_VERSION(7,0)) && \
-     !(SLE_VERSION_CODE && SLE_VERSION_CODE >= SLE_VERSION(10,4,0)))
-static inline __u32 skb_get_hash_raw(const struct sk_buff *skb)
-{
-#ifdef NETIF_F_RXHASH
-	return skb->rxhash;
-#else
-	return 0;
-#endif /* NETIF_F_RXHASH */
-}
-#endif /* !RHEL > 5.9 && !SLES >= 10.4 */
 
 #if (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7,5))
 #define request_firmware_direct	request_firmware
