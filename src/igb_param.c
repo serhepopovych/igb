@@ -132,12 +132,12 @@ IGB_PARAM(LLISize,
  *
  * Valid Range: 0 - 8
  *
- * Default Value:  1
+ * Default Value:  0
  */
 IGB_PARAM(RSS,
-	"Number of Receive-Side Scaling Descriptor Queues (0-8), default 1, 0=number of cpus");
+	"Number of Receive-Side Scaling Descriptor Queues (0-8), default 0=number of cpus");
 
-#define DEFAULT_RSS       1
+#define DEFAULT_RSS       0
 #define MAX_RSS           8
 #define MIN_RSS           0
 
@@ -639,17 +639,12 @@ void igb_check_options(struct igb_adapter *adapter)
 #endif
 			adapter->rss_queues = RSS[bd];
 			switch (adapter->rss_queues) {
+			case 0:
 			case 1:
 				break;
 			default:
 				igb_validate_option(&adapter->rss_queues, &opt,
 						    adapter);
-				if (adapter->rss_queues)
-					break;
-				/* Fall through */
-			case 0:
-				adapter->rss_queues = min_t(u32, opt.arg.r.max,
-							    num_online_cpus());
 				break;
 			}
 #ifdef module_param_array
@@ -657,6 +652,10 @@ void igb_check_options(struct igb_adapter *adapter)
 			adapter->rss_queues = opt.def;
 		}
 #endif
+		if (!adapter->rss_queues) {
+			adapter->rss_queues = min_t(u32, opt.arg.r.max,
+						    num_online_cpus());
+		}
 	}
 	{ /* QueuePairs - Enable Tx/Rx queue pairs for interrupt handling */
 		struct igb_option opt = {
