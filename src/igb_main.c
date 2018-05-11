@@ -7779,18 +7779,22 @@ static bool igb_clean_tx_irq(struct igb_q_vector *q_vector)
 static void igb_receive_skb(struct igb_q_vector *q_vector,
 			    struct sk_buff *skb)
 {
-	struct vlan_group **vlgrp = netdev_priv(skb->dev);
+	struct napi_struct *napi = &q_vector->napi;
+	u16 vid = IGB_CB(skb)->vid;
 
-	if (IGB_CB(skb)->vid) {
+	if (vid) {
+		struct vlan_group **vlgrp = netdev_priv(skb->dev);
+
 		if (*vlgrp) {
-			vlan_gro_receive(&q_vector->napi, *vlgrp,
-					 IGB_CB(skb)->vid, skb);
-		} else {
-			dev_kfree_skb_any(skb);
+			vlan_gro_receive(napi, *vlgrp, vid, skb);
+			return;
 		}
-	} else {
-		napi_gro_receive(&q_vector->napi, skb);
+
+		/* It might be implemented as kernel compat interface */
+		__vlan_hwaccel_put_tag(skb, htons(ETH_P_8021P), vid);
 	}
+
+	napi_gro_receive(napi, skb);
 }
 
 #endif /* HAVE_VLAN_RX_REGISTER */
