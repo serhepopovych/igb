@@ -2131,10 +2131,8 @@ static int igb_set_features(struct net_device *netdev,
 			    netdev_features_t features)
 #endif /* HAVE_RHEL6_NET_DEVICE_OPS_EXT */
 {
-	netdev_features_t changed = netdev->features ^ features;
-#ifdef HAVE_RHEL6_NET_DEVICE_OPS_EXT
 	struct igb_adapter *adapter = netdev_priv(netdev);
-#endif
+	netdev_features_t changed = netdev->features ^ features;
 
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
 	if (changed & NETIF_F_HW_VLAN_CTAG_RX)
@@ -2152,6 +2150,11 @@ static int igb_set_features(struct net_device *netdev,
 		return 0;
 
 	netdev->features = features;
+
+	if (netif_running(netdev))
+		igb_reinit_locked(adapter);
+	else
+		igb_reset(adapter);
 
 	return 0;
 }
@@ -2923,6 +2926,8 @@ static int igb_probe(struct pci_dev *pdev,
 	hw_features |= NETIF_F_LRO;
 
 	hw_features |= netdev->features;
+
+	hw_features |= NETIF_F_RXALL;
 #else
 #ifdef NETIF_F_GRO
 
@@ -4051,6 +4056,22 @@ void igb_setup_rctl(struct igb_adapter *adapter)
 	if (adapter->vfs_allocated_count) {
 		/* set all queue drop enable bits */
 		E1000_WRITE_REG(hw, E1000_QDE, ALL_QUEUES);
+	}
+
+	/* This is useful for sniffing bad packets. */
+	if (adapter->netdev->features & NETIF_F_RXALL) {
+		/* UPE and MPE will be handled by normal PROMISC logic
+		 * in e1000e_set_rx_mode */
+		rctl |= (E1000_RCTL_SBP | /* Receive bad packets */
+			 E1000_RCTL_BAM | /* RX All Bcast Pkts */
+			 E1000_RCTL_PMCF); /* RX All MAC Ctrl Pkts */
+
+		rctl &= ~(E1000_RCTL_VFE | /* Disable VLAN filter */
+			  E1000_RCTL_DPF | /* Allow filtered pause */
+			  E1000_RCTL_CFIEN); /* Dis VLAN CFIEN Filter */
+		/* Do not mess with E1000_CTRL_VME, it affects transmit as well,
+		 * and that breaks VLANs.
+		 */
 	}
 
 	E1000_WRITE_REG(hw, E1000_RCTL, rctl);
@@ -8538,8 +8559,12 @@ static bool igb_clean_rx_irq(struct igb_q_vector *q_vector, int budget)
 
 		if (igb_test_staterr(rx_desc,
 				     E1000_RXDEXT_ERR_FRAME_ERR_MASK)) {
-			dev_kfree_skb_any(skb);
-			continue;
+			struct net_device *netdev = rx_ring->netdev;
+
+			if (!(netdev->features & NETIF_F_RXALL)) {
+				dev_kfree_skb_any(skb);
+				continue;
+			}
 		}
 
 		total_bytes += skb->len;
