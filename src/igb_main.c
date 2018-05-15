@@ -8430,9 +8430,12 @@ static void igb_process_skb_fields(struct igb_ring *rx_ring,
 				   union e1000_adv_rx_desc *rx_desc,
 				   struct sk_buff *skb)
 {
-	struct net_device *dev = rx_ring->netdev;
+	struct net_device *netdev = rx_ring->netdev;
+	struct igb_adapter __maybe_unused *adapter = netdev_priv(netdev);
+	netdev_features_t __maybe_unused features = netdev->features;
 	__le16 pkt_info = rx_desc->wb.lower.lo_dword.hs_rss.pkt_info;
 	bool notype = false;
+	int enable;
 
 #ifdef NETIF_F_RXHASH
 	igb_rx_hash(rx_ring, rx_desc, skb);
@@ -8486,12 +8489,25 @@ static void igb_process_skb_fields(struct igb_ring *rx_ring,
 		igb_ptp_rx_rgtstamp(rx_ring->q_vector, skb);
 
 #endif /* HAVE_PTP_1588_CLOCK */
+
+#ifdef HAVE_VLAN_RX_REGISTER
+	enable = !!adapter->vlgrp;
+#if defined(HAVE_NDO_SET_FEATURES) || defined(ETHTOOL_GFLAGS)
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
-	if ((dev->features & NETIF_F_HW_VLAN_CTAG_RX) &&
+	enable &= !!(features & NETIF_F_HW_VLAN_CTAG_RX);
 #else
-	if ((dev->features & NETIF_F_HW_VLAN_RX) &&
+	enable &= !!(features & NETIF_F_HW_VLAN_RX);
 #endif
-	    igb_test_staterr(rx_desc, E1000_RXD_STAT_VP)) {
+#endif /* HAVE_NDO_SET_FEATURES || ETHTOOL_GFLAGS */
+#else /* !HAVE_VLAN_RX_REGISTER */
+#ifdef NETIF_F_HW_VLAN_CTAG_RX
+	enable = !!(features & NETIF_F_HW_VLAN_CTAG_RX);
+#else
+	enable = !!(features & NETIF_F_HW_VLAN_RX);
+#endif
+#endif /* HAVE_VLAN_RX_REGISTER */
+
+	if (enable && igb_test_staterr(rx_desc, E1000_RXD_STAT_VP)) {
 		u16 vid = 0;
 
 		if (igb_test_staterr(rx_desc, E1000_RXDEXT_STATERR_LB) &&
@@ -8510,7 +8526,7 @@ static void igb_process_skb_fields(struct igb_ring *rx_ring,
 
 	skb_record_rx_queue(skb, rx_ring->queue_index);
 
-	skb->protocol = eth_type_trans(skb, dev);
+	skb->protocol = eth_type_trans(skb, netdev);
 }
 
 /**
@@ -9051,22 +9067,32 @@ void igb_vlan_mode(struct net_device *netdev, netdev_features_t features)
 	struct igb_adapter *adapter = netdev_priv(netdev);
 	struct e1000_hw *hw = &adapter->hw;
 	u32 ctrl, rctl;
-	bool enable;
-	int i;
+	int enable, i;
+
 #ifdef HAVE_VLAN_RX_REGISTER
-	enable = !!vlgrp;
+	netdev_features_t features = netdev->features;
+
 	igb_irq_disable(adapter);
 
 	adapter->vlgrp = vlgrp;
 
 	if (!test_bit(__IGB_DOWN, &adapter->state))
 		igb_irq_enable(adapter);
+
+	enable = !!vlgrp;
+#if defined(HAVE_NDO_SET_FEATURES) || defined(ETHTOOL_GFLAGS)
+#ifdef NETIF_F_HW_VLAN_CTAG_RX
+	enable &= !!(features & NETIF_F_HW_VLAN_CTAG_RX);
 #else
+	enable &= !!(features & NETIF_F_HW_VLAN_RX);
+#endif
+#endif /* HAVE_NDO_SET_FEATURES || ETHTOOL_GFLAGS */
+#else /* !HAVE_VLAN_RX_REGISTER */
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
 	enable = !!(features & NETIF_F_HW_VLAN_CTAG_RX);
 #else
 	enable = !!(features & NETIF_F_HW_VLAN_RX);
-#endif /* NETIF_F_HW_VLAN_CTAG_RX */
+#endif
 #endif /* HAVE_VLAN_RX_REGISTER */
 
 	if (enable) {
@@ -9086,40 +9112,56 @@ void igb_vlan_mode(struct net_device *netdev, netdev_features_t features)
 		E1000_WRITE_REG(hw, E1000_CTRL, ctrl);
 	}
 
+#ifdef HAVE_VLAN_RX_REGISTER
+#if !defined(HAVE_NDO_SET_FEATURES) && !defined(ETHTOOL_GFLAGS)
+#ifdef NETIF_F_HW_VLAN_CTAG_RX
+	if (enable)
+		features |= NETIF_F_HW_VLAN_CTAG_RX;
+	else
+		features &= ~NETIF_F_HW_VLAN_CTAG_RX;
+#else
+	if (enable)
+		features |= NETIF_F_HW_VLAN_RX;
+	else
+		features &= ~NETIF_F_HW_VLAN_RX;
+#endif
+	if (netdev->features != features) {
+		netdev->features = features;
+		netdev_features_change(netdev);
+	}
+#endif /* !HAVE_NDO_SET_FEATURES && !ETHTOOL_GFLAGS */
+#endif /* HAVE_VLAN_RX_REGISTER */
+
 #ifndef CONFIG_IGB_VMDQ_NETDEV
 	for (i = 0; i < adapter->vmdq_pools; i++) {
 		igb_set_vf_vlan_strip(adapter,
 				      adapter->vfs_allocated_count + i,
 				      enable);
 	}
-
 #else
 	igb_set_vf_vlan_strip(adapter,
 			      adapter->vfs_allocated_count,
 			      enable);
 
 	for (i = 1; i < adapter->vmdq_pools; i++) {
+		struct net_device *vnetdev = adapter->vmdq_netdev[i - 1];
+		struct igb_vmdq_adapter *vadapter = netdev_priv(vnetdev);
+		netdev_features_t vfeatures = vnetdev->features;
+
 #ifdef HAVE_VLAN_RX_REGISTER
-		struct igb_vmdq_adapter *vadapter;
-
-		vadapter = netdev_priv(adapter->vmdq_netdev[i-1]);
-
 		enable = !!vadapter->vlgrp;
 #else
-		struct net_device *vnetdev;
-
-		vnetdev = adapter->vmdq_netdev[i-1];
+		enable = 1;
+#endif
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
-		enable = !!(vnetdev->features & NETIF_F_HW_VLAN_CTAG_RX);
+		enable &= !!(vfeatures & NETIF_F_HW_VLAN_CTAG_RX);
 #else
-		enable = !!(vnetdev->features & NETIF_F_HW_VLAN_RX);
-#endif /* NETIF_F_HW_VLAN_CTAG_RX */
-#endif /* HAVE_VLAN_RX_REGISTER */
+		enable &= !!(vfeatures & NETIF_F_HW_VLAN_RX);
+#endif
 		igb_set_vf_vlan_strip(adapter,
 				      adapter->vfs_allocated_count + i,
 				      enable);
 	}
-
 #endif /* CONFIG_IGB_VMDQ_NETDEV */
 	igb_rlpml_set(adapter);
 }
