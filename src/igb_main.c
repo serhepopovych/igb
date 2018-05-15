@@ -9207,30 +9207,36 @@ static void igb_vlan_rx_kill_vid(struct net_device *netdev, u16 vid)
 
 static void igb_restore_vlan(struct igb_adapter *adapter)
 {
+	struct net_device *netdev = adapter->netdev;
+	u16 vid = 1;
+
+	/*
+	 * add vlan ID 0 and enable vlan tag stripping so we
+	 * always accept priority-tagged traffic
+	 */
+#ifdef NETIF_F_HW_VLAN_CTAG_RX
+	igb_vlan_rx_add_vid(netdev, htons(ETH_P_8021Q), 0);
+#else
+	igb_vlan_rx_add_vid(netdev, 0);
+#endif
 #ifdef HAVE_VLAN_RX_REGISTER
 	if (adapter->vlgrp) {
-		u16 vid;
-
-		for (vid = 0; vid < VLAN_N_VID; vid++) {
+		for (; vid < VLAN_N_VID; vid++) {
 			if (!vlan_group_get_device(adapter->vlgrp, vid))
 				continue;
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
-			igb_vlan_rx_add_vid(adapter->netdev,
-					    htons(ETH_P_8021Q), vid);
+			igb_vlan_rx_add_vid(netdev, htons(ETH_P_8021Q), vid);
 #else
-			igb_vlan_rx_add_vid(adapter->netdev, vid);
+			igb_vlan_rx_add_vid(netdev, vid);
 #endif /* NETIF_F_HW_VLAN_CTAG_RX */
 		}
 	}
 #else
-	u16 vid;
-
-	for_each_set_bit(vid, adapter->active_vlans, VLAN_N_VID)
+	for_each_set_bit_from(vid, adapter->active_vlans, VLAN_N_VID)
 #ifdef NETIF_F_HW_VLAN_CTAG_RX
-		igb_vlan_rx_add_vid(adapter->netdev,
-				    htons(ETH_P_8021Q), vid);
+		igb_vlan_rx_add_vid(netdev, htons(ETH_P_8021Q), vid);
 #else
-		igb_vlan_rx_add_vid(adapter->netdev, vid);
+		igb_vlan_rx_add_vid(netdev, vid);
 #endif /* NETIF_F_HW_VLAN_CTAG_RX */
 #endif /* HAVE_VLAN_RX_REGISTER */
 }
