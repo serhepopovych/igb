@@ -1,0 +1,5 @@
+igb (5.8.5-netctl-1) unstable; urgency=low
+
+  * Initial release. (Closes: #123456)
+
+ -- Serhey Popovych <serhe.popovych@gmail.com>  Sat, 05 Feb 2022 10:19:32 +0200
