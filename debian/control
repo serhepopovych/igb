@@ -1,0 +1,21 @@
+Source: igb
+Section: kernel
+Priority: extra
+Maintainer: Serhey Popovych <serhe.popovych@gmail.com>
+Build-Depends: debhelper (>= 9), dkms
+Standards-Version: 5.3.5.36
+Homepage: https://github.com/serhepopovych/igb
+Vcs-Git: https://github.com/serhepopovych/igb.git
+Vcs-Browser: https://github.com/serhepopovych/igb
+
+Package: igb-dkms
+Architecture: all
+Depends: ${misc:Depends}
+Description: DKMS source for Intel 1GbE Ethernet Controller out of tree driver
+ This is Intel 1GbE Ethernet Controller out of tree igb driver.
+ .
+ Installation of the igb-dkms package will disable the in-kernel igb
+ module. To re-enable them, the igb-dkms package must be purged.
+ .
+ This package provides the dkms source code for the igb kernel module.
+ Kernel source or headers are required to compile these modules.
