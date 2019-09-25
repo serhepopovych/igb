@@ -6397,24 +6397,7 @@ static inline bool __kc_napi_if_scheduled_mark_missed(struct napi_struct *n)
 #endif /* 4.20.0 */
 
 /*****************************************************************************/
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0))
-struct ptp_system_timestamp {
-	struct timespec64 pre_ts;
-	struct timespec64 post_ts;
-};
-
-static inline void
-ptp_read_system_prets(struct ptp_system_timestamp __always_unused *sts)
-{
-	;
-}
-
-static inline void
-ptp_read_system_postts(struct ptp_system_timestamp __always_unused *sts)
-{
-	;
-}
-#else /* >= 5.0.0 */
+#if !(LINUX_VERSION_CODE < KERNEL_VERSION(5,0,0))
 #define HAVE_PTP_SYS_OFFSET_EXTENDED_IOCTL
 #define HAVE_NDO_BRIDGE_SETLINK_EXTACK
 #define HAVE_DMA_ALLOC_COHERENT_ZEROES_MEM
