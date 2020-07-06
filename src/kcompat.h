@@ -4996,6 +4996,7 @@ static inline struct pci_dev *pci_upstream_bridge(struct pci_dev *dev)
 
 #if (!(RHEL_RELEASE_CODE >= RHEL_RELEASE_VERSION(7,2)))
 #define list_last_entry(ptr, type, member) list_entry((ptr)->prev, type, member)
+#define hwmon_device_register_with_groups(dev, ...) hwmon_device_register(dev)
 #endif
 
 #if (RHEL_RELEASE_CODE < RHEL_RELEASE_VERSION(7,0))
