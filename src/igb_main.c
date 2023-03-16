@@ -2983,9 +2983,10 @@ static int igb_probe(struct pci_dev *pdev,
 			    NETIF_F_HW_CSUM;
 	if (hw->mac.type >= e1000_82576)
 		netdev->features |= NETIF_F_SCTP_CSUM;
-
+#ifdef NETIF_F_HW_TC
 	if (hw->mac.type >= e1000_i350)
 		netdev->features |= NETIF_F_HW_TC;
+#endif
 #ifdef NETIF_F_GSO_PARTIAL
 #define IGB_GSO_PARTIAL_FEATURES (NETIF_F_GSO_GRE | \
 				  NETIF_F_GSO_GRE_CSUM | \
@@ -10387,7 +10388,9 @@ static int igb_ndo_get_vf_config(struct net_device *netdev,
 #ifdef HAVE_VF_SPOOFCHK_CONFIGURE
 	ivi->spoofchk = adapter->vf_data[vf].spoofchk_enabled;
 #endif
+#ifdef HAVE_NDO_SET_VF_TRUST
 	ivi->trusted = adapter->vf_data[vf].trusted;
+#endif
 	return 0;
 }
 #endif
