@@ -3,6 +3,8 @@ PACKAGE_VERSION="#MODULE_VERSION#"
 AUTOINSTALL="YES"
 REMAKE_INITRD="NO"
 
+# Note that space is mandatory to override make(1) command completely
+MAKE[0]=" make -j${parallel_jobs} KSRC=/lib/modules/${kernelver}/source BUILD_KERNEL=${kernelver}"
 BUILT_MODULE_LOCATION[0]=""
 BUILT_MODULE_NAME[0]="$PACKAGE_NAME"
 DEST_MODULE_LOCATION[0]="/updates/dkms"
