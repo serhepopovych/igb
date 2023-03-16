@@ -1956,21 +1956,6 @@ static inline bool dev_page_is_reusable(struct page *page)
 }
 #endif /* NEED_DEV_PAGE_IS_REUSABLE */
 
-/* NEED_NAPI_BUILD_SKB
- *
- * napi_build_skb was introduced by
- * commit f450d539c05a: ("skbuff: introduce {,__}napi_build_skb() which reuses NAPI cache heads")
- *
- * This function is a more efficient version of build_skb().
- */
-#ifdef NEED_NAPI_BUILD_SKB
-static inline
-struct sk_buff *napi_build_skb(void *data, unsigned int frag_size)
-{
-	return build_skb(data, frag_size);
-}
-#endif /* NEED_NAPI_BUILD_SKB */
-
 /* NEED_DEBUGFS_LOOKUP
  *
  * Old RHELs (7.2-7.4) do not have this backported. Create a stub and always
