@@ -249,7 +249,7 @@ static int igb_ptp_adjfreq_82576(struct ptp_clock_info *ptp, s32 ppb)
 	 *    scaled_ppm = ppb * 2^13 / 125
 	 */
 	scaled_ppm = ((long)ppb << 13) / 125;
-	return ixgbe_ptp_adjfine_82576(info, scaled_ppm);
+	return igb_ptp_adjfine_82576(info, scaled_ppm);
 }
 #endif /* HAVE_PTP_CLOCK_INFO_ADJFINE */
 
